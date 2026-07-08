@@ -3,7 +3,12 @@
 ═══════════════════════════════════════════════ */
 
 const API = (() => {
-  const BASE = 'http://localhost:5000/api';
+  const BASE =
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1'
+      ? 'http://localhost:5000/api'
+      : '/api';
+
   const TOKEN_KEY = 'voyago_token';
 
   function getToken() {
@@ -109,13 +114,16 @@ const API = (() => {
     } catch (err) {
       return {
         success: false,
-        message: 'Network error. Is the backend server running on port 5000?',
+        message:
+          window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1'
+            ? 'Network error. Is the backend server running on port 5000?'
+            : 'Network error. Could not connect to the server.',
         error: err.message
       };
     }
   }
 
-  /* ── Public Endpoints ────────────────────── */
   const publicApi = {
     getVehicles: (p) => request('/public/vehicles' + (p ? '?' + p : '')),
     getVehicle: (id) => request('/public/vehicles/' + id),
@@ -126,9 +134,7 @@ const API = (() => {
     createContact: (d) => request('/contacts', { method: 'POST', body: d })
   };
 
-  /* ── Admin Endpoints ─────────────────────── */
   const adminApi = {
-    /* Auth */
     login: async (d, remember = true) => {
       const res = await request('/admin/login', {
         method: 'POST',
@@ -139,41 +145,47 @@ const API = (() => {
       }
       return res;
     },
+
     register: (d) => request('/admin/register', { method: 'POST', body: d }),
     getMe: () => request('/admin/me'),
     getDashboard: () => request('/admin/dashboard'),
-    changePassword: (d) => request('/admin/change-password', { method: 'PUT', body: d }),
+    changePassword: (d) =>
+      request('/admin/change-password', { method: 'PUT', body: d }),
 
-    /* Vehicles */
     getVehicles: (p) => request('/vehicles' + (p ? '?' + p : '')),
     getVehicle: (id) => request('/vehicles/' + id),
     createVehicle: (d) => request('/vehicles', { method: 'POST', body: d }),
-    updateVehicle: (id, d) => request('/vehicles/' + id, { method: 'PUT', body: d }),
+    updateVehicle: (id, d) =>
+      request('/vehicles/' + id, { method: 'PUT', body: d }),
     deleteVehicle: (id) => request('/vehicles/' + id, { method: 'DELETE' }),
-    toggleVehicle: (id) => request('/vehicles/' + id + '/toggle', { method: 'PATCH' }),
+    toggleVehicle: (id) =>
+      request('/vehicles/' + id + '/toggle', { method: 'PATCH' }),
 
-    /* Packages */
     getPackages: (p) => request('/packages' + (p ? '?' + p : '')),
     getPackage: (id) => request('/packages/' + id),
     createPackage: (d) => request('/packages', { method: 'POST', body: d }),
-    updatePackage: (id, d) => request('/packages/' + id, { method: 'PUT', body: d }),
+    updatePackage: (id, d) =>
+      request('/packages/' + id, { method: 'PUT', body: d }),
     deletePackage: (id) => request('/packages/' + id, { method: 'DELETE' }),
-    togglePackage: (id) => request('/packages/' + id + '/toggle', { method: 'PATCH' }),
-    toggleFeatured: (id) => request('/packages/' + id + '/featured', { method: 'PATCH' }),
+    togglePackage: (id) =>
+      request('/packages/' + id + '/toggle', { method: 'PATCH' }),
+    toggleFeatured: (id) =>
+      request('/packages/' + id + '/featured', { method: 'PATCH' }),
 
-    /* Bookings */
     getBookings: (p) => request('/bookings' + (p ? '?' + p : '')),
     getBooking: (id) => request('/bookings/' + id),
-    updateBooking: (id, d) => request('/bookings/' + id, { method: 'PUT', body: d }),
-    updateBookingStatus: (id, d) => request('/bookings/' + id + '/status', { method: 'PATCH', body: d }),
+    updateBooking: (id, d) =>
+      request('/bookings/' + id, { method: 'PUT', body: d }),
+    updateBookingStatus: (id, d) =>
+      request('/bookings/' + id + '/status', { method: 'PATCH', body: d }),
     deleteBooking: (id) => request('/bookings/' + id, { method: 'DELETE' }),
 
-    /* Contacts */
     getContacts: (p) => request('/contacts' + (p ? '?' + p : '')),
     getContact: (id) => request('/contacts/' + id),
     deleteContact: (id) => request('/contacts/' + id, { method: 'DELETE' }),
     markRead: (id) => request('/contacts/' + id + '/read', { method: 'PATCH' }),
-    markUnread: (id) => request('/contacts/' + id + '/unread', { method: 'PATCH' })
+    markUnread: (id) =>
+      request('/contacts/' + id + '/unread', { method: 'PATCH' })
   };
 
   return {

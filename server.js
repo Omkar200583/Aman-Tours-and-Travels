@@ -51,7 +51,7 @@ const routeRoutes = require('./routes/routeRoutes');
 const rootPath = __dirname;
 const publicPath = path.join(rootPath, 'public');
 const uploadsPath = path.join(rootPath, 'uploads');
-const assetsPath = path.join(rootPath, 'assets'); // optional root-level assets folder
+const assetsPath = path.join(rootPath, 'assets');
 
 // Ensure upload directories exist
 [
@@ -76,7 +76,7 @@ app.use(
       'http://localhost:5500',
       'http://127.0.0.1:5500',
       'http://localhost:5000',
-      'http://127.0.0.1:5000',
+      'http://127.0.0.1:5000'
     ],
     credentials: true,
   })
@@ -96,19 +96,19 @@ if (process.env.NODE_ENV !== 'production') {
 // STATIC FILES
 // --------------------------------------------------
 
-// 1) uploads
+// uploads
 app.use('/uploads', express.static(uploadsPath));
 
-// Optional fallback if uploads also exist one level above project root
+// optional fallback uploads
 const altUploadsPath = path.join(rootPath, '..', 'uploads');
 if (fs.existsSync(altUploadsPath)) {
   app.use('/uploads', express.static(altUploadsPath));
 }
 
-// 2) public folder (HTML/CSS/JS/assets if assets live inside public/assets)
+// public folder
 app.use(express.static(publicPath, { index: false }));
 
-// 3) optional root-level assets folder
+// optional root assets
 if (fs.existsSync(assetsPath)) {
   app.use('/assets', express.static(assetsPath));
 }
@@ -116,36 +116,30 @@ if (fs.existsSync(assetsPath)) {
 // --------------------------------------------------
 // PAGE ROUTES
 // --------------------------------------------------
-
-// Home
 app.get('/', (req, res, next) => {
   const file = path.join(publicPath, 'index.html');
   if (fs.existsSync(file)) return res.sendFile(file);
   next(new Error(`index.html not found at ${file}`));
 });
 
-// Optional dashboard.html
 app.get('/dashboard.html', (req, res) => {
   const file = path.join(publicPath, 'dashboard.html');
   if (fs.existsSync(file)) return res.sendFile(file);
   return res.redirect('/');
 });
 
-// Admin login
 app.get('/admin', (req, res) => {
   const file = path.join(publicPath, 'admin-login.html');
   if (fs.existsSync(file)) return res.sendFile(file);
   return res.status(404).send('admin-login.html not found in public folder');
 });
 
-// Admin dashboard
 app.get('/admin/dashboard', (req, res) => {
   const file = path.join(publicPath, 'admin-dashboard.html');
   if (fs.existsSync(file)) return res.sendFile(file);
   return res.status(404).send('admin-dashboard.html not found in public folder');
 });
 
-// Health
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
@@ -168,7 +162,6 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/human', userRoutes);
 app.use('/api/route', routeRoutes);
 
-// Ignore Chrome devtools file
 app.get('/.well-known/appspecific/com.chrome.devtools.json', (req, res) => {
   res.status(204).end();
 });
