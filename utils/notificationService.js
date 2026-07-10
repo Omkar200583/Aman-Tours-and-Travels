@@ -4,9 +4,48 @@ const path = require('path');
 const twilio = require('twilio');
 const brevo = require('@getbrevo/brevo');
 
-/* =========================================================
-   LOGO
-========================================================= */
+/* ═══════════════════════════════════════════════════════════════
+   SANDBOX OPT-IN CHECKER — Check if user is allowed to receive WhatsApp
+   ═══════════════════════════════════════════════════════════════ */
+const SANDBOX_MODE = true; // Set to false when you upgrade to production
+const SANDBOX_TEST_NUMBERS = process.env.SANDBOX_TEST_NUMBERS?.split(',') || ['+919359873623'];
+
+function isUserOptedIntoSandbox(phoneNumber) {
+  if (!SANDBOX_MODE) return true; // Production doesn't have this restriction
+  
+  const normalized = normalizePhoneNumber(phoneNumber);
+  const isTestNumber = SANDBOX_TEST_NUMBERS.some(testNum => {
+    const normTestNum = normalizePhoneNumber(testNum);
+    return normTestNum === normalized;
+  });
+  
+  return isTestNumber;
+}
+
+function getSandboxOptInInstructions() {
+  if (!SANDBOX_MODE) return '';
+  
+  return `
+    
+⚠️  SANDBOX MODE — Recipient Opt-In Required
+────────────────────────────────────────────────────────────
+Your Twilio WhatsApp is in SANDBOX mode. Recipients must opt-in first:
+
+1. Have the user send this WhatsApp message:
+   TO: +1 415 523 8886
+   TEXT: join quite-aware
+
+2. Wait for Twilio confirmation (1-2 minutes)
+
+3. Then your app can send messages for 24 hours
+
+🔗 Learn more: https://www.twilio.com/console/sms/whatsapp/sandbox
+
+Upgrade to Production to remove this limitation!
+────────────────────────────────────────────────────────────`;
+}
+
+/* ─── LOGO ─── */
 let cachedLogoAttachment = null;
 let logoReadAttempted = false;
 
@@ -37,9 +76,7 @@ function getLogoImgTag(width = 64) {
   return '';
 }
 
-/* =========================================================
-   ENV HELPERS
-========================================================= */
+/* ─── ENV HELPERS ─── */
 function env(name, fallback = '') {
   const v = process.env[name];
   return typeof v === 'string' ? v.trim() : fallback;
@@ -55,9 +92,7 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 }
 
-/* =========================================================
-   BREVO INITIALIZATION
-========================================================= */
+/* ─── BREVO INITIALIZATION ─── */
 let brevoApiInstance = null;
 let brevoInitError = null;
 
@@ -115,9 +150,7 @@ async function sendBrevoEmail(payload) {
   throw new Error('Brevo client does not expose a supported sendTransacEmail method');
 }
 
-/* =========================================================
-   TWILIO INITIALIZATION
-========================================================= */
+/* ─── TWILIO INITIALIZATION ─── */
 let twilioClient = null;
 let twilioInitError = null;
 
@@ -141,6 +174,17 @@ function getTwilioClient() {
   try {
     twilioClient = twilio(accountSid, authToken);
     console.log('✅ Twilio client initialized — SID:', maskSecret(accountSid));
+    
+    // ✅ Log sandbox mode status
+    if (SANDBOX_MODE) {
+      console.log('📱 WhatsApp SANDBOX MODE ACTIVE');
+      console.log('   Test recipients:', SANDBOX_TEST_NUMBERS.join(', '));
+      console.log('   Opt-in required: YES');
+      console.log('   Each message valid for: 24 hours');
+    } else {
+      console.log('🌍 WhatsApp PRODUCTION MODE');
+    }
+    
     return twilioClient;
   } catch (err) {
     twilioInitError = err.message;
@@ -149,9 +193,7 @@ function getTwilioClient() {
   }
 }
 
-/* =========================================================
-   PHONE / WHATSAPP NORMALIZATION
-========================================================= */
+/* ─── PHONE / WHATSAPP NORMALIZATION ─── */
 function normalizePhoneNumber(phone) {
   if (!phone) return null;
   const raw = String(phone).trim();
@@ -169,9 +211,7 @@ function toWhatsAppAddress(value) {
   return trimmed.startsWith('whatsapp:') ? trimmed : `whatsapp:${trimmed}`;
 }
 
-/* =========================================================
-   EMAIL TEMPLATES
-========================================================= */
+/* ─── EMAIL TEMPLATES ─── */
 function formatBookingDate(date) {
   if (!date) return 'N/A';
   return new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -297,9 +337,7 @@ function buildAdminNotificationEmailHTML(booking) {
   });
 }
 
-/* =========================================================
-   WHATSAPP TEMPLATES — simple plain text (sandbox-safe)
-========================================================= */
+/* ─── WHATSAPP TEMPLATES ─── */
 function buildUserWhatsAppMessage(booking) {
   const bookingDate = formatBookingDate(booking.pickupDate);
   const totalFare = booking.totalPrice != null ? `Rs ${Number(booking.totalPrice).toLocaleString('en-IN')}` : 'TBD';
@@ -335,9 +373,7 @@ Fare: ${totalFare}
 Status: PENDING - confirm and assign vehicle`;
 }
 
-/* =========================================================
-   EMAIL SENDER
-========================================================= */
+/* ─── EMAIL SENDER ─── */
 async function sendEmail(recipientEmail, recipientName, subject, htmlContent, includeLogo = true) {
   if (!recipientEmail || !isValidEmail(recipientEmail)) {
     console.log(`⏭️ Email skipped — invalid recipient email: ${recipientEmail || '(missing)'}`);
@@ -373,9 +409,9 @@ async function sendEmail(recipientEmail, recipientName, subject, htmlContent, in
   }
 }
 
-/* =========================================================
-   WHATSAPP SENDER — detailed logging + real delivery status check
-========================================================= */
+/* ═══════════════════════════════════════════════════════════════
+   WHATSAPP SENDER — WITH SANDBOX ERROR HANDLING
+   ═══════════════════════════════════════════════════════════════ */
 async function sendWhatsApp(phoneNumber, message) {
   const client = getTwilioClient();
   if (!client) {
@@ -395,6 +431,19 @@ async function sendWhatsApp(phoneNumber, message) {
     return { success: false, reason: 'Invalid phone format', phone: phoneNumber || null };
   }
 
+  // ✅ CHECK SANDBOX OPT-IN
+  if (SANDBOX_MODE && !isUserOptedIntoSandbox(normalizedPhone)) {
+    console.log(`⏭️ WhatsApp skipped — recipient not opted into sandbox`);
+    console.log(getSandboxOptInInstructions());
+    return { 
+      success: false, 
+      reason: 'Sandbox opt-in required', 
+      phone: normalizedPhone,
+      sandboxOptInNeeded: true,
+      instructions: getSandboxOptInInstructions()
+    };
+  }
+
   const fromAddress = toWhatsAppAddress(rawFrom);
   const toAddress = toWhatsAppAddress(normalizedPhone);
 
@@ -407,62 +456,75 @@ async function sendWhatsApp(phoneNumber, message) {
 
     console.log(`✅ WhatsApp accepted by Twilio for ${normalizedPhone} (SID: ${result.sid}, initial status: ${result.status})`);
 
-    // Real delivery status — checked 8 sec later, printed automatically, no Console needed
+    // Real delivery status checked 8 sec later
     setTimeout(() => checkMessageStatus(client, result.sid, normalizedPhone), 8000);
 
     return { success: true, phone: normalizedPhone, sid: result.sid, initialStatus: result.status };
   } catch (err) {
     console.error(`❌ WhatsApp failed to ${normalizedPhone}`);
-    console.error('   Message:', err.message);
-    console.error('   Code:', err.code);
-    console.error('   Status:', err.status);
-    console.error('   More Info:', err.moreInfo);
+    console.error('   Error Message:', err.message);
+    console.error('   Error Code:', err.code);
 
-    if (err.code === 63055) {
-      console.error('   → Non-marketing message sent through an MM Lite-restricted sender.');
-    } else if (err.code === 20003) {
-      console.error('   → Authentication error: TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN wrong or revoked.');
-    } else if (err.code === 21211) {
-      console.error('   → Invalid phone number format.');
-    } else if (err.code === 21606) {
-      console.error('   → The "from" number is not a valid WhatsApp-enabled Twilio number.');
-    } else if (err.code === 21610) {
-      console.error('   → Recipient has not opted in / sandbox session expired. Ask them to send "join <keyword>" again.');
+    // ✅ BETTER ERROR MESSAGES FOR SANDBOX
+    if (err.code === 63015) {
+      console.error('   → ERROR 63015: Message outside 24-hour conversation window');
+      console.error('   → Reason: Recipient may not be opted in or window expired');
+      console.error(getSandboxOptInInstructions());
     } else if (err.code === 63016) {
-      console.error('   → Message outside the 24-hour session window and no approved template used.');
+      console.error('   → ERROR 63016: Message outside 24-hour session window (no template used)');
+      console.error('   → Solution: Use message templates or wait for user message');
+    } else if (err.code === 21610) {
+      console.error('   → ERROR 21610: Recipient has not opted in to sandbox');
+      console.error(getSandboxOptInInstructions());
+    } else if (err.code === 20003) {
+      console.error('   → Authentication error: Check TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN');
+    } else if (err.code === 63055) {
+      console.error('   → Non-marketing message sent through MM Lite-restricted sender');
     }
 
-    return { success: false, phone: normalizedPhone, error: err.message, code: err.code, status: err.status, moreInfo: err.moreInfo };
+    return { 
+      success: false, 
+      phone: normalizedPhone, 
+      error: err.message, 
+      code: err.code,
+      isSandboxError: [63015, 63016, 21610].includes(err.code),
+      sandboxInstructions: getSandboxOptInInstructions()
+    };
   }
 }
 
-// Fetches the real delivery status a few seconds after sending, and logs it.
 async function checkMessageStatus(client, sid, phoneNumber) {
   try {
     const msg = await client.messages(sid).fetch();
-    console.log(`📡 Delivery check for ${phoneNumber} (SID: ${sid}) → status: ${msg.status}${msg.errorCode ? `, errorCode: ${msg.errorCode}, errorMessage: ${msg.errorMessage}` : ''}`);
+    const statusEmoji = msg.status === 'delivered' ? '📬' : msg.status === 'failed' ? '❌' : '📡';
+    console.log(`${statusEmoji} Delivery check for ${phoneNumber} (SID: ${sid}) → status: ${msg.status}${msg.errorCode ? `, errorCode: ${msg.errorCode}` : ''}`);
+    
+    if (msg.status === 'failed' && msg.errorCode) {
+      console.error(`   Error: ${msg.errorMessage || 'Unknown error'}`);
+    }
   } catch (err) {
     console.error(`⚠️ Could not fetch delivery status for SID ${sid}:`, err.message);
   }
 }
 
-/* =========================================================
+/* ═══════════════════════════════════════════════════════════════
    MASTER NOTIFICATION FUNCTION
-========================================================= */
+   ═══════════════════════════════════════════════════════════════ */
 async function sendBookingNotifications(booking) {
   if (!booking) {
     console.error('❌ sendBookingNotifications: Booking object is required');
     return { success: false, error: 'No booking provided' };
   }
 
-  console.log('\n' + '='.repeat(60));
+  console.log('\n' + '='.repeat(70));
   console.log(`📨 SENDING NOTIFICATIONS FOR BOOKING: ${booking.bookingId || '(new booking)'}`);
-  console.log('='.repeat(60) + '\n');
+  console.log('='.repeat(70) + '\n');
 
   const results = {
     booking: { id: booking.bookingId, customer: booking.name, email: booking.email, phone: booking.phone },
     notifications: { userEmail: null, userWhatsApp: null, adminEmail: null, adminWhatsApp: null },
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    sandboxMode: SANDBOX_MODE
   };
 
   console.log('📧 Sending user confirmation email...');
@@ -489,22 +551,29 @@ async function sendBookingNotifications(booking) {
   const adminPhone = env('ADMIN_WHATSAPP') || env('ADMIN_PHONE');
   results.notifications.adminWhatsApp = await sendWhatsApp(adminPhone, buildAdminWhatsAppMessage(booking));
 
-  console.log('\n' + '='.repeat(60));
-  console.log('📨 NOTIFICATION BATCH SUMMARY (real status = check "📡 Delivery check" lines above)');
-  console.log('='.repeat(60));
+  console.log('\n' + '='.repeat(70));
+  console.log('📨 NOTIFICATION BATCH SUMMARY');
+  console.log('='.repeat(70));
   console.log(`Booking: ${booking.bookingId}`);
   console.log(`User Email:     ${results.notifications.userEmail?.success ? '✅ Sent' : '❌ Failed'}`);
-  console.log(`User WhatsApp:  ${results.notifications.userWhatsApp?.success ? '✅ Accepted by Twilio' : '❌ Failed'}`);
+  console.log(`User WhatsApp:  ${results.notifications.userWhatsApp?.success ? '✅ Sent' : '⚠️ ' + (results.notifications.userWhatsApp?.reason || 'Failed')}`);
   console.log(`Admin Email:    ${results.notifications.adminEmail?.success ? '✅ Sent' : '❌ Failed'}`);
-  console.log(`Admin WhatsApp: ${results.notifications.adminWhatsApp?.success ? '✅ Accepted by Twilio' : '❌ Failed'}`);
-  console.log('='.repeat(60) + '\n');
+  console.log(`Admin WhatsApp: ${results.notifications.adminWhatsApp?.success ? '✅ Sent' : '⚠️ ' + (results.notifications.adminWhatsApp?.reason || 'Failed')}`);
+  
+  if (SANDBOX_MODE) {
+    console.log('\n' + '⚠️ '.repeat(15));
+    console.log('SANDBOX MODE ACTIVE - WhatsApp Limitations:');
+    console.log('✓ Recipients must opt in first');
+    console.log('✓ Messages valid for 24 hours only');
+    console.log('✓ Only ' + SANDBOX_TEST_NUMBERS.length + ' test number(s) allowed');
+    console.log('⚠️ '.repeat(15));
+  }
+  console.log('='.repeat(70) + '\n');
 
   return results;
 }
 
-/* =========================================================
-   BOOKING STATUS-CHANGE EMAIL
-========================================================= */
+/* ─── BOOKING STATUS-CHANGE EMAIL ─── */
 function buildStatusUpdateEmailHTML(booking, status) {
   const bookingDate = formatBookingDate(booking.pickupDate);
   const vehicleInfo = booking.vehicleId
@@ -567,5 +636,8 @@ module.exports = {
   buildUserConfirmationEmailHTML,
   buildAdminNotificationEmailHTML,
   buildUserWhatsAppMessage,
-  buildAdminWhatsAppMessage
+  buildAdminWhatsAppMessage,
+  isUserOptedIntoSandbox,
+  getSandboxOptInInstructions,
+  SANDBOX_MODE
 };
